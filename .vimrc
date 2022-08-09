@@ -2,6 +2,11 @@
 let g:loaded_netrw = 1
 let g:loaded_netrwPlugin = 1
 
+function! s:terminal_instance()
+    return len(filter(range(1, bufnr('$')), 'buflisted(v:val) && "terminal" ==? getbufvar(v:val, "&buftype")'))
+endfunction
+
+" plugins
 call plug#begin('~/.vim/plugged')
 Plug 'ycm-core/YouCompleteMe'
 Plug 'octol/vim-cpp-enhanced-highlight'
@@ -24,13 +29,15 @@ Plug 'tpope/vim-fugitive'
 Plug 'ryanoasis/vim-devicons'
 Plug 'puremourning/vimspector'
 Plug 'romgrk/doom-one.vim'
+Plug 'romainl/vim-qf/'
 Plug 'ap/vim-buftabline'
 Plug 'itchyny/lightline.vim'
-Plug 'qpkorr/vim-bufkill'
 Plug 'mhinz/vim-startify'
+Plug 'legendaryzyper/vim-bclose'
+Plug 'svermeulen/vim-cutlass'
 call plug#end()
 
-" vim settings
+" vim
 syntax on
 filetype plugin indent on
 set hlsearch
@@ -39,10 +46,8 @@ set smartcase
 set incsearch
 set clipboard^=unnamed,unnamedplus
 set guifont=Iosevka\ Nerd\ Font\ Mono\ 14
+set guioptions-=mrL
 set guioptions-=T
-set guioptions-=m
-set guioptions-=r
-set guioptions-=L
 set wildmenu
 set mouse=a
 set shortmess=a
@@ -67,23 +72,45 @@ cd ~/Documents/tin
 colorscheme doom-one
 command! Vimrc e ~/.vimrc
 
-" backup settings
+" fix my problem with startify
+let s:terminal_opened = 0
+function! s:trigger()
+    if empty(filter(range(1, bufnr('$')), 'buflisted(v:val) && "terminal" ==? getbufvar(v:val, "&buftype")'))
+        if s:terminal_opened == 1
+            let s:terminal_opened = 0
+            if exists('#User#TerminalClose')
+                execute 'doautocmd User TerminalClose'
+            endif
+        endif
+    endif
+endfunction
+augroup startify_fix
+    autocmd!
+    autocmd TerminalOpen * let s:terminal_opened = 1
+    autocmd BufEnter * call s:trigger()
+    autocmd User TerminalClose if line2byte('.') == -1 && winnr('$') > 1 && empty(bufname()) | execute winnr('#') ' wincmd w' | execute 'Bdelete! nameless' | endif
+augroup END
+
+" backup
 set noswapfile
 set nobackup
 set undofile
 let &undodir = expand('~/.vim/undo')
 if !isdirectory(&undodir) | call mkdir(&undodir, "p") | endif
 
-" statusline settings
+" statusline
 set laststatus=2
 
-" gutter settings
+" gutter
 set signcolumn=yes
 hi signcolumn guibg=bg
 let &fillchars ..= ',eob: '
-autocmd TerminalOpen * setlocal signcolumn=no
+augroup terminal_no_sign
+    autocmd!
+    autocmd TerminalOpen * setlocal signcolumn=no
+augroup END
 
-" ycm settings
+" ycm
 hi ycmwarningsection gui=undercurl guisp=#B5CEA6
 let g:ycm_clangd_uses_ycmd_caching = 0
 let g:ycm_clangd_binary_path = exepath("clangd")
@@ -104,147 +131,131 @@ nnoremap <F2> :<C-U>YcmCompleter RefactorRename
 nnoremap <silent> <Leader>f :<C-U>YcmCompleter Format<CR>
 nnoremap <silent> <Leader>. :<C-U>YcmCompleter FixIt<CR>
 nnoremap <silent> <Leader>m :<C-U>YcmDiags<CR>
-autocmd User YcmQuickFixOpened autocmd! ycmquickfix WinLeave
+augroup ycm_keep_quickfix
+    autocmd!
+    autocmd User YcmQuickFixOpened autocmd! ycmquickfix WinLeave
+augroup END
 
-" rooter settings
+" rooter
 let g:rooter_patterns = ['Makefile']
 let g:rooter_change_directory_for_non_project_files = 'current'
 let g:rooter_cd_cmd = 'lcd'
 let g:rooter_silent_chdir = 1
 
-let g:startify_change_to_dir = 0
-
-" nerdtree settings
+" nerdtree
 let g:NERDTreeWinSize = 30
 let NERDTreeShowLineNumbers = 1
 let NERDTreeShowHidden = 1
 let NERDTreeHijackNetrw = 0
 nnoremap <silent> <Leader>b :<C-U>NERDTree<CR>
-autocmd BufEnter,WinEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | q | endif
-augroup nerdtreehidecwd
-	autocmd!
-	autocmd FileType nerdtree setlocal conceallevel=3 | syntax match NERDTreeDirSlash #/$# containedin=NERDTreeDir conceal contained
-augroup end
+augroup nerdtree_autoclose
+    autocmd!
+    autocmd BufEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | q | endif
+augroup END
+augroup nerdtree_fix
+    autocmd!
+    autocmd FileType nerdtree setlocal conceallevel=3 | syntax match NERDTreeDirSlash #/$# containedin=NERDTreeDir conceal contained
+augroup END
 if exists('g:loaded_webdevicons')
     call webdevicons#refresh()
 endif
 
-" fzf settings
+" fzf
 let g:fzf_layout = { 'up': '30%' }
 let $FZF_DEFAULT_COMMAND = 'ag --hidden --ignore .git -l -g ""'
 nnoremap <silent> <Leader>p :<C-U>Files<CR>
 nnoremap <silent> <Leader>kp :<C-u>Buffers<CR>
 
-" lightline settings
+" lightline
 let g:lightline = {
 \ 'colorscheme': 'one',
 \ 'component_function': {
-\   'filename': 'Lightlinefilename',
+\   'filename': "Lightlinefilename",
 \ },
 \ }
 function! Lightlinefilename()
   return expand('%:.')
 endfunction
 
-" startify settings
-let g:startify_custom_header = [
-\ "                 ________  ++    _______",
-\ "                /VVVVVVVV\\++++  /VVVVVVV\|",
-\ "                \\VVVVVVVV/++++++\\VVVVVVV|",
-\ "                 |VVVVVV|++++++++/VVVVV/'",
-\ "                 |VVVVVV|++++++/VVVVV/'",
-\ "                +|VVVVVV|++++/VVVVV/'+",
-\ "              +++|VVVVVV|++/VVVVV/'+++++",
-\ "            +++++|VVVVVV|/VVVVV/'+++++++++",
-\ "              +++|VVVVVVVVVVV/'+++++++++",
-\ "                +|VVVVVVVVV/'+++++++++",
-\ "                 |VVVVVVV/'+++++++++",
-\ "                 |VVVVV/'+++++++++",
-\ "                 |VVV/'+++++++++",
-\ "                 'V/'   ++++++",
-\ "                          ++",
-\ "               Vim is love, Vim is life."
-\ ]
+" startify
+let g:startify_change_to_dir = 0
 let g:startify_bookmarks = ['~/.vimrc']
 let g:startify_lists = [
-	\ { 'type': 'files', 'header': ['	Recent'] },
-	\ { 'type': 'bookmarks', 'header': ['	Bookmarks'] }
-	\ ]
-autocmd BufEnter * if line2byte('.') == -1 && len(tabpagebuflist()) == 1 && empty(bufname()) | Startify | endif
+\ { 'type': 'files', 'header': ['	Recent'] },
+\ { 'type': 'bookmarks', 'header': ['	Bookmarks'] }
+\ ]
+augroup startify_autoclose
+    autocmd!
+    autocmd BufEnter * if line2byte('.') == -1 && len(tabpagebuflist()) == 1 && empty(bufname()) | Startify | endif
+augroup END
 
-" buftabline settings
+" buftabline
 hi! link BufTabLineCurrent LightlineLeft_normal_0
 hi! link BufTabLineHidden LightlineLeft_normal_1
 hi BufTabLineFill guibg=bg
 let g:buftabline_indicators = 1
 
-" gitgutter settings
+" gitgutter
 let g:gitgutter_map_keys = 0
 
-" bufkill settings
-let g:BufKillCreateMappings = 0
-let g:BufKillActionWhenBufferDisplayedInAnotherWindow = 'kill'
-nnoremap <silent> <Leader>w :<C-U>BW<CR>
+" bclose
+nnoremap <silent> <Leader>w :<C-U>Bclose<CR>
 
-" close-buffers settings
+" close-buffers
 nnoremap <silent> <Leader>kw :<C-U>Bdelete all<CR>
 
-" c/c++ syntax highlight settings
+" c/c++ syntax highlight
 let g:cpp_experimental_simple_template_highlight = 1
 
-" mappings
-nnoremap <silent> <Leader><PageUp> :<C-U>bp<CR>
-nnoremap <silent> <Leader><PageDown> :<C-U>bn<CR>
+" general mappings
 noremap <Down> <Nop>
 noremap <Up> <Nop>
 noremap <Right> <Nop>
 noremap <Left> <Nop>
 noremap <Space> <Nop>
-nnoremap x "_x
-nnoremap d "_d
-nnoremap D "_D
-nnoremap c "_c
-nnoremap C "_C
-vnoremap d "_d
-vnoremap c "_c
+nnoremap m d
+xnoremap m d
+nnoremap mm dd
+nnoremap M D
+nnoremap <silent> <Leader><PageUp> :<C-U>bp<CR>
+nnoremap <silent> <Leader><PageDown> :<C-U>bn<CR>
 tnoremap <C-W>p <C-W>"+
-nnoremap <Leader>` :<C-U>term<CR>
-nnoremap <Leader>\ :<C-U>vs<CR>
+nnoremap <expr> <silent> <Leader>` <SID>terminal_instance() == 0 ? ':<C-U>term<CR>' : ''
+nnoremap <silent> <Leader>\ :<C-U>vs<CR>
 
-" location/quickfix list settings
-augroup openquickfixwindowaftermake
-    autocmd QuickFixCmdPost [^l]* nested cwindow
-    autocmd QuickFixCmdPost    l* nested lwindow
-augroup END
-function! Quitlast()
-    if &buftype == "quickfix"
-        if winnr('$') < 2
-            q
-        endif
-    endif
-endfunction
-autocmd BufEnter,WinEnter * call Quitlast()
+" augroup quickfix_if_error
+"     autocmd!
+"     autocmd QuickFixCmdPost [^l]* nested cwindow
+"     autocmd QuickFixCmdPost    l* nested lwindow
+" augroup END
 
-" project settings (mostly c++ and c)
+" qf
+let g:qf_auto_open_quickfix = 1
+let g:qf_auto_open_loclist = 1
+
+" project (mostly c++ and c)
 let $CC = 'gcc'
 let $CFLAGS = '-std=c11'
 let $CXX = 'g++'
 let $CXXFLAGS = '-std=c++17 -ggdb3 -O0 -pipe -static'
 let $LDLIBS = '-lm'
-autocmd BufNewFile,BufRead,DirChanged * if !empty(FindRootDirectory()) | let &makeprg = 'make' | else | let &makeprg = 'make %:.:r' | endif
+augroup change_makeprg
+    autocmd!
+    autocmd BufNewFile,BufRead,DirChanged * if !empty(FindRootDirectory()) | let &makeprg = 'make' | else | let &makeprg = 'make %:.:r' | endif
+augroup END
 nnoremap <expr> <silent> <Leader>B !empty(FindRootDirectory()) ? ':<C-U>wa <bar> make<CR>' : ':<C-U>w <bar> make<CR>'
+nnoremap <expr> <silent> <Leader><F5> <SID>terminal_instance() == 0 ? !empty(FindRootDirectory()) ? ':<C-U>term make run<CR>' : ':<C-U>term ./%:.:r<CR>' : ''
 nnoremap <silent> <Leader><F7> :<C-U>w <bar> make %:.:r<CR>
-nnoremap <expr> <silent> <Leader><F5> !empty(FindRootDirectory()) ? ':<C-U>term make run<CR>' : ':<C-U>term ./%:.:r<CR>'
 
-" vimspector settings
+" vimspector
 let g:vimspector_enable_mappings = 'VISUAL_STUDIO'
 
-" numberline settings
+" numberline
 set nu
-augroup numbertoggle
+augroup number_toggle
 	autocmd!
-	autocmd BufEnter,FocusGained,InsertLeave,WinEnter * if &nu && mode() != "i"            | setlocal rnu        | endif
-	autocmd BufLeave,FocusLost,InsertEnter,WinLeave   * if &nu                             | setlocal nornu      | endif
+	autocmd BufEnter,FocusGained,InsertLeave,WinEnter * if &nu && mode() != "i"                | setlocal rnu        | endif
+	autocmd BufLeave,FocusLost,InsertEnter,WinLeave   * if &nu                                 | setlocal nornu      | endif
     autocmd BufEnter,WinEnter                         * if bufname("%:.:r") ==# '_ycm_filter_' | setlocal nonu nornu | endif
     autocmd TerminalOpen                              * setlocal nonu nornu
 augroup END
